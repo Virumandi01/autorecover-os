@@ -1,0 +1,37 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Caches and environment
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# Environment Variables & Secrets (CRITICAL: Do not push API keys)
+.env
+.env.local
+*.env
+
+# SQLite Database & Local State
+*.db
+*.sqlite3
+recovery_ledger.db
+
+# Heavy Model Weights & Training Output (Keep repo light)
+training/lora_adapter/
+training/outputs/
+*.safetensors
+*.bin
+*.gguf
+*.pt
+*.pth
+
+# Streamlit local config
+.streamlit/

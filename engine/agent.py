@@ -1,56 +1,65 @@
-import json
 from google import genai
 from google.genai import types
 import config
-from schemas import PaymentEvent, AgentDecision, ActionType
+from schemas import PaymentEvent, WorkflowDecision, WorkflowStep, ActionType
 
 client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 SYSTEM_PROMPT = """
-You are the AI Recovery Diagnostics Engine for an Indian Payment Gateway.
-Your goal is to determine the optimal recovery strategy for failed payments and dropouts.
+You are Razorpay's AI Revenue Recovery Engine.
+Generate deterministic recovery decisions and natural, respectful Hinglish recovery scripts when required.
 
-Rules:
-1. INSUFFICIENT_FUNDS on salary accounts: Schedule a retry for 24-48 hours (wait for salary/balance top-up).
-2. OTP_TIMEOUT / USER_ABANDONED: High intent drop-off. Send immediate WhatsApp 1-click payment link.
-3. Over INR 5000 drop-offs: You may offer up to 5% incentive discount to close the recovery immediately.
-4. Output ONLY valid structured data matching the schema. Keep rationale strictly under 15 words.
+Capabilities:
+1. For drop-offs / failed subscriptions: create clear Hinglish communication scripts (e.g. "Namaste [Name], aapka ₹[Amount] ka payment pause ho gaya hai. Yahan click karke 10 second me complete karein").
+2. For B2B receivables: determine if a Promise-to-Pay (PTP) should be logged or escalated to legal/finance notices based on days overdue.
+3. Keep recovery incentive discount <= 5%.
 """
 
-def diagnose_and_decide(event: PaymentEvent) -> AgentDecision:
-    """Invokes Gemini with structured JSON output schema."""
-    user_content = f"""
-    Evaluate this failed payment event:
-    - ID: {event.transaction_id}
-    - Amount: INR {event.amount_inr}
-    - Channel: {event.channel.value}
-    - Failure Reason: {event.failure_reason.value}
-    - Retry Count: {event.retry_count}
-    - Is Salary Account: {event.is_salary_account}
-    """
+def generate_hinglish_voice_script(customer_name: str, amount: float, link: str) -> str:
+    """Generates concise Hinglish voice/WhatsApp prompt."""
+    return f"Namaste {customer_name}! Aapka ₹{amount:,.0f} ka Razorpay transaction complete nahi ho paya. Dobara bina kisi rukawat ke pay karne ke liye ye link use karein: {link}"
 
+def run_ai_diagnostics(event: PaymentEvent) -> WorkflowDecision:
+    """Invokes Gemini for complex unstructured recovery decisions."""
     try:
+        user_prompt = f"""
+        Diagnose transaction:
+        - Customer: {event.customer_name}
+        - Category: {event.category.value}
+        - Amount: INR {event.amount_inr}
+        - Reason: {event.failure_reason.value}
+        - Overdue Days: {event.days_overdue}
+        - Retry Count: {event.retry_count}
+        """
+
         response = client.models.generate_content(
             model=config.DEFAULT_MODEL,
-            contents=[
-                types.Content(role="user", parts=[types.Part.from_text(text=user_content)])
-            ],
+            contents=[types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)])],
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT,
                 response_mime_type="application/json",
-                response_schema=AgentDecision,
+                response_schema=WorkflowDecision,
                 temperature=0.1
             )
         )
-        # Parse directly from structured JSON
-        decision = AgentDecision.model_validate_json(response.text)
-        return decision
-    except Exception as e:
+        return WorkflowDecision.model_validate_json(response.text)
+    except Exception:
         # Failsafe deterministic fallback
-        return AgentDecision(
-            action=ActionType.WHATSAPP_PAY_LINK,
-            target_channel="WHATSAPP",
-            scheduled_hour_delay=0,
-            rationale=f"Failsafe triggered due to agent timeout: {str(e)[:30]}",
-            incentive_discount_pct=0.0
+        script = generate_hinglish_voice_script(event.customer_name, event.amount_inr, "https://rzp.io/i/rec_xyz")
+        return WorkflowDecision(
+            category=event.category,
+            primary_action=ActionType.HINGLISH_VOICE_NUDGE,
+            workflow_steps=[
+                WorkflowStep(
+                    step_number=1,
+                    scheduled_delay_minutes=15,
+                    action=ActionType.HINGLISH_VOICE_NUDGE,
+                    channel="WHATSAPP_VOICE",
+                    message_content=script,
+                    reason_context="Failsafe Hinglish reminder dispatched."
+                )
+            ],
+            root_cause_diagnosis=f"Recovering {event.category.value} via localized nudge.",
+            hinglish_script=script,
+            recovery_incentive_pct=0.0
         )

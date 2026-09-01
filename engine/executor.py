@@ -1,37 +1,48 @@
 import random
-from schemas import PaymentEvent, AgentDecision, RecoveryResult, ActionType
+from schemas import PaymentEvent, WorkflowDecision, ExecutionTrace, ActionType
 
-def execute_recovery(event: PaymentEvent, decision: AgentDecision) -> RecoveryResult:
-    """
-    Executes bounded action via simulated Razorpay API / Communication webhook.
-    """
-    if decision.action == ActionType.TERMINATE:
-        return RecoveryResult(
-            transaction_id=event.transaction_id,
-            initial_amount=event.amount_inr,
-            action_taken=decision.action,
-            recovered=False,
-            amount_recovered=0.0,
-            audit_note=f"Terminated: {decision.rationale}"
-        )
+def execute_bounded_workflow(event: PaymentEvent, decision: WorkflowDecision) -> ExecutionTrace:
+    logs = []
+    recovered = False
+    amount_recovered = 0.0
+    steps_run = 0
 
-    # Realistic recovery probability based on intervention type
-    success_probability = 0.85 if decision.action == ActionType.WHATSAPP_PAY_LINK else 0.70
-    is_success = random.random() < success_probability
+    logs.append(f"[{event.transaction_id}] [{event.category.value}] Diagnosed: {decision.root_cause_diagnosis}")
 
-    if is_success:
-        discount_factor = 1.0 - (decision.incentive_discount_pct / 100.0)
-        recovered_amount = round(event.amount_inr * discount_factor, 2)
-        audit = f"Recovered via {decision.target_channel}. Delay: {decision.scheduled_hour_delay}h. Discount: {decision.incentive_discount_pct}%"
-    else:
-        recovered_amount = 0.0
-        audit = f"Failed after execution on {decision.target_channel}."
+    for step in decision.workflow_steps:
+        steps_run += 1
+        if step.action == ActionType.TERMINATE:
+            logs.append(f"🛑 Step {step.step_number}: {step.reason_context}")
+            break
 
-    return RecoveryResult(
+        logs.append(f"⚡ Step {step.step_number} (T+{step.scheduled_delay_minutes}m): Executed {step.action.value} on {step.channel}")
+
+        # Recovery probability per channel
+        prob = 0.88 if step.action in [ActionType.WHATSAPP_FAST_PAY, ActionType.HINGLISH_VOICE_NUDGE] else 0.74
+        if random.random() < prob:
+            recovered = True
+            discount_factor = 1.0 - (decision.recovery_incentive_pct / 100.0)
+            amount_recovered = round(event.amount_inr * discount_factor, 2)
+            logs.append(f"✅ Recovered ₹{amount_recovered:,.2f} at Step {step.step_number} (Incentive: {decision.recovery_incentive_pct}%)")
+            break
+        else:
+            logs.append(f"⚠️ Step {step.step_number} response pending/unresolved. Escalating...")
+
+    final_status = "RECOVERED" if recovered else "UNRECOVERED"
+    if not recovered and steps_run > 0:
+        logs.append("🛑 Workflow bounds completed. Awaiting manual finance review.")
+
+    return ExecutionTrace(
         transaction_id=event.transaction_id,
-        initial_amount=event.amount_inr,
-        action_taken=decision.action,
-        recovered=is_success,
-        amount_recovered=recovered_amount,
-        audit_note=audit
+        customer_name=event.customer_name,
+        category=event.category,
+        amount_at_risk=event.amount_inr,
+        failure_reason=event.failure_reason,
+        workflow_summary=f"{decision.primary_action.value} ({steps_run} Steps)",
+        final_status=final_status,
+        recovered_amount=amount_recovered,
+        steps_taken=steps_run,
+        hinglish_log=decision.hinglish_script,
+        ptp_status=f"PTP Date: {decision.ptp_date_assigned}" if decision.ptp_date_assigned else None,
+        audit_trail=logs
     )

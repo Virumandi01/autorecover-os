@@ -1,51 +1,72 @@
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
-class FailureReason(str, Enum):
-    INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS"
-    BANK_DOWNTIME = "BANK_DOWNTIME"
-    EXPIRED_CARD = "EXPIRED_CARD"
-    OTP_TIMEOUT = "OTP_TIMEOUT"
-    MANDATE_REJECTED = "MANDATE_REJECTED"
-    USER_ABANDONED = "USER_ABANDONED"
+class RecoveryCategory(str, Enum):
+    PAYMENT_DEGRADATION = "PAYMENT_DEGRADATION"
+    CHECKOUT_DROPOFF = "CHECKOUT_DROPOFF"
+    FAILED_SUBSCRIPTION = "FAILED_SUBSCRIPTION"
+    B2B_RECEIVABLES = "B2B_RECEIVABLES"
+    MANDATE_RETRY = "MANDATE_RETRY"
 
-class PaymentChannel(str, Enum):
-    UPI = "UPI"
-    CARD = "CARD"
-    MANDATE = "MANDATE"
-    NETBANKING = "NETBANKING"
+class FailureReason(str, Enum):
+    BANK_DOWNTIME = "BANK_DOWNTIME"
+    PACKET_LOSS = "PACKET_LOSS"
+    INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS"
+    OTP_DROPOFF = "OTP_DROPOFF"
+    EXPIRED_CARD = "EXPIRED_CARD"
+    OVERDUE_INVOICE = "OVERDUE_INVOICE"
+    MANDATE_REJECTED = "MANDATE_REJECTED"
 
 class ActionType(str, Enum):
-    SILENT_RETRY = "SILENT_RETRY"
-    WHATSAPP_PAY_LINK = "WHATSAPP_PAY_LINK"
-    EMAIL_INVOICE = "EMAIL_INVOICE"
+    SILENT_MANDATE_RETRY = "SILENT_MANDATE_RETRY"
+    WHATSAPP_FAST_PAY = "WHATSAPP_FAST_PAY"
+    HINGLISH_VOICE_NUDGE = "HINGLISH_VOICE_NUDGE"
+    B2B_ESCALATION_EMAIL = "B2B_ESCALATION_EMAIL"
+    PTP_LOGGED = "PTP_LOGGED"
     TERMINATE = "TERMINATE"
 
 class PaymentEvent(BaseModel):
     transaction_id: str
     customer_id: str
     customer_name: str
+    category: RecoveryCategory
     amount_inr: float
-    channel: PaymentChannel
+    channel: str
     failure_reason: FailureReason
     retry_count: int = 0
+    days_overdue: int = 0
     is_salary_account: bool = False
     customer_opt_out: bool = False
+    promised_pay_date: Optional[str] = None
 
-class AgentDecision(BaseModel):
+class WorkflowStep(BaseModel):
+    step_number: int
+    scheduled_delay_minutes: int
     action: ActionType
-    target_channel: str
-    scheduled_hour_delay: int = Field(
-        description="Hours to delay before execution (e.g. 0 for immediate, 24 for next day)"
-    )
-    rationale: str = Field(description="Max 15 words explaining root-cause diagnosis")
-    incentive_discount_pct: float = Field(default=0.0, le=5.0)
+    channel: str
+    message_content: Optional[str] = None
+    reason_context: str
 
-class RecoveryResult(BaseModel):
+class WorkflowDecision(BaseModel):
+    category: RecoveryCategory
+    primary_action: ActionType
+    workflow_steps: List[WorkflowStep]
+    root_cause_diagnosis: str
+    hinglish_script: Optional[str] = None
+    ptp_date_assigned: Optional[str] = None
+    recovery_incentive_pct: float = Field(default=0.0, le=5.0)
+
+class ExecutionTrace(BaseModel):
     transaction_id: str
-    initial_amount: float
-    action_taken: ActionType
-    recovered: bool
-    amount_recovered: float
-    audit_note: str
+    customer_name: str
+    category: RecoveryCategory
+    amount_at_risk: float
+    failure_reason: FailureReason
+    workflow_summary: str
+    final_status: str
+    recovered_amount: float
+    steps_taken: int
+    hinglish_log: Optional[str] = None
+    ptp_status: Optional[str] = None
+    audit_trail: List[str]

@@ -1,0 +1,9 @@
+finished pip this :
+
+pip install edge-tts requests  
+
+until this fininshed in the chat 
+
+need to creathe the remaining thisng and then make the remaining thinsg 
+
+so this is the day 2 work finished

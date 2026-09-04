@@ -65,8 +65,14 @@ Failed transactions and cart abandonments cost merchants billions in lost Gross 
                              │   • Segregated Audit CSV Export │
                              └─────────────────────────────────┘
 
+text'''
 
-##  Complete Local Environment Setup & Execution Guide
+
+---
+
+
+  
+Complete Local Environment Setup & Execution Guide
 
 ### 1. Prerequisites & Environment Initialization
 

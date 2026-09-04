@@ -1,9 +1,14 @@
-finished pip this :
+finished , may be fully ,
+now need to add more language , make whats fake thinsg integrated along with this 
+and then add the other things 
 
-pip install edge-tts requests  
+everyothers ok 
 
-until this fininshed in the chat 
+may be make the details like from the cudtomer make it like the real in the generation
+ of 50 transactiosn we can make in the 50 :
 
-need to creathe the remaining thisng and then make the remaining thinsg 
-
-so this is the day 2 work finished
+15 with some errors every type of erroes , 
+then the ai there thenmust wantedly make one tranactiopn fail with 
+with the gemini ai 
+so we cam ake the proof that even if the own ai fails we can easily start with the 
+gemini or a universai api 

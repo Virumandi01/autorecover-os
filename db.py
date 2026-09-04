@@ -116,3 +116,12 @@ def finalize_transaction(txn_id: str, final_status: str, recovered_amt: float, l
     """, (final_status, recovered_amt, json.dumps(logs), datetime.now().isoformat(), txn_id))
     conn.commit()
     conn.close()
+
+# In db.py, add this function at the bottom:
+def clear_all_transactions():
+    """Wipes all transaction rows safely without file locking issues."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM transactions")
+    conn.commit()
+    conn.close()

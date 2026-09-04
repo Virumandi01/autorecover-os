@@ -20,7 +20,7 @@ Failed transactions and cart abandonments cost merchants billions in lost Gross 
 
 ##  System Architecture
 
-```text
+```
                                   [ Incoming Payment Stream ]
                                               │
                                               ▼
@@ -65,10 +65,6 @@ Failed transactions and cart abandonments cost merchants billions in lost Gross 
                              │   • Segregated Audit CSV Export │
                              └─────────────────────────────────┘
 
-text'''
-
-
----
 
 
   
@@ -151,7 +147,7 @@ Segregated Escalation Batch CSV: Prioritizes Revenue Lost / Terminated transacti
 
 You can also package these dependencies cleanly into a `requirements.txt` file in your repository:
 
-```text
+
 torch>=2.4.0
 torchvision
 transformers>=4.44.0

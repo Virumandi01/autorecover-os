@@ -3,16 +3,18 @@ import os
 import random
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from db import init_db, insert_transaction, clear_all_transactions
-from schemas import RecoveryCategory, FailureReason
 
 load_dotenv(override=True)
-TARGET_PHONE = os.getenv("TARGET_TEST_PHONE", "+919876543210")
+
+from db import init_db, insert_transaction, clear_all_transactions
+from schemas import RecoveryCategory, FailureReason
+from engine.dispatcher import synthesize_hinglish_voice, send_real_whatsapp_interactive
+
+TARGET_PHONE = os.getenv("TARGET_TEST_PHONE", "916381121659")
 
 CUST_NAMES = [
     "Aarav Sharma", "Priya Patel", "Vikram Malhotra", "Ananya Iyer", "Rohit Verma",
-    "Nexus Retail Ltd", "Apex Tech Solutions", "Kavita Rao", "Aditya Joshi", "Siddharth Sen",
-    "Meera Nair", "Rajesh Kumar", "Divya Menon", "Rohan Gupta", "Deepak Verma"
+    "Nexus Retail Ltd", "Apex Tech Solutions", "Kavita Rao", "Aditya Joshi", "Siddharth Sen"
 ]
 
 CATEGORIES = list(RecoveryCategory)
@@ -25,10 +27,16 @@ FAILURE_POOL = [
 ]
 
 def emit_single_live_transaction():
-    """Emits exactly 1 transaction for testing."""
+    """Emits 1 transaction, creates audio, and sends WhatsApp message."""
     init_db()
     t_id = f"TXN_{random.randint(40000, 99999)}"
-    amt = round(random.uniform(1500.0, 18000.0), 2)
+    amt = round(random.uniform(2500.0, 18500.0), 2)
+    hinglish_text = f"Namaste! Aapka payment network issue ki wajah se atak gaya tha. Niche button tap karke retry karein."
+
+    print(f"\n⚡ Synthesizing Hinglish voice for {t_id}...")
+    audio_path = synthesize_hinglish_voice(hinglish_text, t_id)
+
+    # 1. Insert into Ledger
     ev = {
         "id": t_id,
         "customer_name": "Harisankar S",
@@ -44,29 +52,40 @@ def emit_single_live_transaction():
         "promised_pay_date": None
     }
     insert_transaction(ev)
-    print(f"⚡ [Emitted 1 Event] {t_id} for Harisankar S (₹{amt}) -> Target WhatsApp: {TARGET_PHONE}")
+    print(f"📝 Inserted {t_id} into database ledger.")
+
+    # 2. Dispatch Outbound Message to WhatsApp
+    print(f"📱 Dispatching WhatsApp message to {TARGET_PHONE}...")
+    res = send_real_whatsapp_interactive(
+        phone=TARGET_PHONE,
+        customer_name="Harisankar S",
+        amount=amt,
+        pay_url=f"https://rzp.io/l/{t_id.lower()}",
+        hinglish_text=hinglish_text,
+        txn_id=t_id,
+        send_voice=True
+    )
+    print(f"✅ Dispatch complete. System awaiting customer response.\n")
 
 def generate_benchmark_50():
-    """Generates 50 structured benchmark transactions (30 Success, 15 Recovery, 5 Terminated)."""
+    """Generates 50 benchmark transactions (~26 Success, ~16 Recovery, ~8 Terminated)."""
     init_db()
     clear_all_transactions()
     base_time = datetime.now() - timedelta(minutes=150)
     txns = []
 
-    # 1. 30 Pure Success Transactions
-    for i in range(1, 31):
+    # 1. 26 Direct Successes
+    for i in range(1, 27):
         t_time = base_time + timedelta(minutes=i * 2)
-        amt = round(random.uniform(500.0, 15000.0), 2)
+        amt = round(random.uniform(800.0, 14500.0), 2)
         cat = random.choice(CATEGORIES)
-        ch = random.choice(["UPI", "CARD", "NETBANKING"])
-        cust = random.choice(CUST_NAMES)
         txns.append({
             "id": f"TXN_{10000 + i}",
-            "customer_name": cust,
+            "customer_name": random.choice(CUST_NAMES),
             "customer_phone": "+919800000000",
             "category": cat.value,
             "amount_inr": amt,
-            "channel": ch,
+            "channel": random.choice(["UPI", "CARD", "NETBANKING"]),
             "status": "SUCCESS",
             "failure_reason": None,
             "days_overdue": 0,
@@ -76,72 +95,65 @@ def generate_benchmark_50():
             "created_at": t_time.isoformat()
         })
 
-    # 2. 15 Multi-Step Error-Recovered Transactions
-    recovery_scenarios = [
-        ("CHECKOUT_DROPOFF", FailureReason.PACKET_LOSS, "WHATSAPP_FAST_PAY"),
-        ("MANDATE_RETRY", FailureReason.INSUFFICIENT_FUNDS, "SILENT_MANDATE_RETRY"),
-        ("FAILED_SUBSCRIPTION", FailureReason.EXPIRED_CARD, "HINGLISH_VOICE_NUDGE"),
-        ("PAYMENT_DEGRADATION", FailureReason.BANK_DOWNTIME, "SILENT_MANDATE_RETRY"),
-        ("B2B_RECEIVABLES", FailureReason.EXPIRED_CARD, "B2B_ESCALATION_EMAIL")
+    # 2. 16 Recoverable Errors
+    error_matrix = [
+        (RecoveryCategory.CHECKOUT_DROPOFF.value, FailureReason.PACKET_LOSS.value),
+        (RecoveryCategory.MANDATE_RETRY.value, FailureReason.INSUFFICIENT_FUNDS.value),
+        (RecoveryCategory.FAILED_SUBSCRIPTION.value, FailureReason.EXPIRED_CARD.value),
+        (RecoveryCategory.PAYMENT_DEGRADATION.value, FailureReason.BANK_DOWNTIME.value),
+        (RecoveryCategory.B2B_RECEIVABLES.value, FailureReason.MANDATE_REJECTED.value),
     ]
-
-    for j in range(1, 16):
-        t_time = base_time + timedelta(minutes=60 + j * 3)
-        amt = round(random.uniform(2500.0, 48000.0), 2)
-        cat_str, f_reason, action = random.choice(recovery_scenarios)
-        cust = CUST_NAMES[j % len(CUST_NAMES)]
-        cust_phone = TARGET_PHONE if j == 1 else f"+9198{random.randint(10000000, 99999999)}"
-        
+    for j in range(1, 17):
+        t_time = base_time + timedelta(minutes=55 + j * 3)
+        amt = round(random.uniform(3200.0, 42000.0), 2)
+        cat_val, f_val = error_matrix[j % len(error_matrix)]
         txns.append({
             "id": f"TXN_{20000 + j}",
-            "customer_name": cust,
-            "customer_phone": cust_phone,
-            "category": cat_str,
+            "customer_name": CUST_NAMES[j % len(CUST_NAMES)],
+            "customer_phone": f"+9198{random.randint(10000000, 99999999)}",
+            "category": cat_val,
             "amount_inr": amt,
-            "channel": "UPI" if "DROPOFF" in cat_str else "UPI_MANDATE",
+            "channel": "UPI" if "DROPOFF" in cat_val else "UPI_MANDATE",
             "status": "PENDING_RETRY",
-            "failure_reason": f_reason.value,
-            "days_overdue": random.randint(10, 35) if cat_str == "B2B_RECEIVABLES" else 0,
-            "is_salary_account": True if j % 2 == 0 else False,
+            "failure_reason": f_val,
+            "days_overdue": random.randint(12, 38) if cat_val == "B2B_RECEIVABLES" else 0,
+            "is_salary_account": (j % 2 == 0),
             "customer_opt_out": False,
-            "promised_pay_date": "2026-09-12" if cat_str == "B2B_RECEIVABLES" else None,
+            "promised_pay_date": "2026-09-15" if cat_val == "B2B_RECEIVABLES" else None,
             "created_at": t_time.isoformat()
         })
 
-    # 3. 5 Terminated / Lost Revenue Transactions
-    for k in range(1, 6):
-        t_time = base_time + timedelta(minutes=110 + k * 2)
-        amt = round(random.uniform(8000.0, 85000.0), 2)
+    # 3. 8 Terminated Cases
+    for k in range(1, 9):
+        t_time = base_time + timedelta(minutes=105 + k * 2)
+        amt = round(random.uniform(9500.0, 92000.0), 2)
         cat = random.choice(CATEGORIES)
-        f_reason = random.choice(FAILURE_POOL)
-        cust = random.choice(["Apex Tech Solutions", "Nexus Retail Ltd", "Vikram Malhotra"])
-        
         txns.append({
             "id": f"TXN_{30000 + k}",
-            "customer_name": cust,
+            "customer_name": random.choice(["Apex Tech Solutions", "Nexus Retail Ltd", "Vikram Malhotra"]),
             "customer_phone": f"+9198{random.randint(10000000, 99999999)}",
             "category": cat.value,
             "amount_inr": amt,
             "channel": "CARD",
             "status": "PENDING_RETRY",
-            "failure_reason": f_reason.value,
-            "days_overdue": 45 if cat == RecoveryCategory.B2B_RECEIVABLES else 0,
+            "failure_reason": random.choice(FAILURE_POOL).value,
+            "days_overdue": 50 if cat == RecoveryCategory.B2B_RECEIVABLES else 0,
             "is_salary_account": False,
-            "customer_opt_out": (k == 5),
+            "customer_opt_out": (k >= 7),
             "promised_pay_date": None,
             "created_at": t_time.isoformat()
         })
 
     for item in txns:
         insert_transaction(item)
-    print(f"✅ [Seeded 50 Transactions] 30 Success, 15 Scheduled Recovery, 5 Final Terminated.")
+    print(f"✅ Ingested 50 benchmark transactions (~26 Success, ~16 Multi-Step Recovered, ~8 Terminated).")
 
 def main():
     init_db()
     print("=" * 60)
-    print("📡 LIVE GATEWAY BENCHMARK & TEST CONTROLLER")
-    print("  [1] Emit 1 single live test event (Routes to verified WhatsApp)")
-    print("  [2] Seed Benchmark 50 Dataset (30 Success, 15 Recovery, 5 Terminated)")
+    print("📡 LIVE GATEWAY BENCHMARK & DEMO CONTROLLER")
+    print("  [1] Emit 1 single live interactive event (WhatsApp)")
+    print("  [2] Seed Benchmark 50 Dataset")
     print("  [3] Clear entire database ledger")
     print("  [q] Quit")
     print("=" * 60)

@@ -1,5 +1,7 @@
 import sqlite3
 import json
+import os
+import glob
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
@@ -125,3 +127,21 @@ def clear_all_transactions():
     cursor.execute("DELETE FROM transactions")
     conn.commit()
     conn.close()
+
+def clear_all_transactions():
+    """Wipes all transaction rows and removes generated audio files."""
+    # 1. Clear database rows
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM transactions")
+    conn.commit()
+    conn.close()
+
+    # 2. Clean up generated audio files
+    audio_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "audio"))
+    if os.path.exists(audio_dir):
+        for audio_file in glob.glob(os.path.join(audio_dir, "*.mp3")):
+            try:
+                os.remove(audio_file)
+            except OSError:
+                pass

@@ -14,12 +14,31 @@ from schemas import PaymentEvent, RecoveryCategory, FailureReason
 st.set_page_config(page_title="AutoRecover OS | Payment Recovery Engine", page_icon="⚡", layout="wide")
 init_db()
 
+with st.sidebar.expander("⏱️ Demo Time-Compression Scale", expanded=True):
+    st.markdown("""
+    | Demo Time | Real-World Scale | Category & Purpose |
+    | :--- | :--- | :--- |
+    | **3s – 4s** | **15 – 30 Mins** | `CHECKOUT_DROPOFF` (Instant Nudge) |
+    | **6s – 8s** | **2 – 4 Hours** | `BANK_DOWNTIME` (Core Bank Reset) |
+    | **10s – 12s** | **24 Hours** | `MANDATE_RETRY` (Salary Re-presentment) |
+    | **15s – 20s** | **3 – 7 Days** | `FAILED_SUBSCRIPTION` (Card Grace Period) |
+    | **288s** | **30 – 45 Days** | `B2B_RECEIVABLES` (Enterprise PTP & AR Dunning) |
+    | **Final Stop** | **45+ Days** | Max 3 Retries / Compliance Termination |
+    """)
+
 # --- TEMPORAL RECOVERY WORKER ---
 def run_temporal_recovery_worker():
     due_jobs = get_due_recovery_jobs()
     for row in due_jobs:
         txn_id = row["id"]
         step = row["current_step"] + 1
+
+        # 1. Check if this is the live single test transaction (Wait exclusively for WhatsApp webhook button click)
+        is_live_interactive = (row.get("customer_phone") == os.getenv("TARGET_TEST_PHONE") and row["category"] == "CHECKOUT_DROPOFF")
+
+        if is_live_interactive:
+            # DO NOT re-dispatch WhatsApp message or auto-randomize. Keep waiting for user button action.
+            continue
         
         ev = PaymentEvent(
             transaction_id=txn_id,
@@ -54,15 +73,8 @@ def run_temporal_recovery_worker():
         hinglish_msg = decision.hinglish_script
         if hinglish_msg and not audio_path:
             audio_path = synthesize_hinglish_voice(hinglish_msg, txn_id)
-            send_real_whatsapp_interactive(
-                row.get("customer_phone", "+919876543210"),
-                row["customer_name"],
-                row["amount_inr"],
-                f"https://rzp.io/l/{txn_id.lower()}",
-                hinglish_msg
-            )
 
-        # 60% probability of success per retry
+        # 60% probability of success per retry for benchmark dataset
         is_recovered = random.random() < 0.60
         if is_recovered:
             finalize_transaction(
